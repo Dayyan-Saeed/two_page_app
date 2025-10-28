@@ -30,8 +30,11 @@ class _ThreadsPageState extends State<ThreadsPage> {
       final apiUsers = await ApiService.fetchUsers();
       final random = Random();
       
+      // Shuffle posts to get variety from different users
+      apiPosts.shuffle(random);
+      
       setState(() {
-        _posts = apiPosts.take(20).map((post) {
+        _posts = apiPosts.take(15).map((post) {
           final user = apiUsers.firstWhere(
             (user) => user.id == post.userId,
             orElse: () => apiUsers[random.nextInt(apiUsers.length)],
