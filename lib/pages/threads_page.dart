@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../pages/post_detail_page.dart';
+import '../services/api_service.dart';
+import 'dart:math';
 
 class ThreadsPage extends StatefulWidget {
   const ThreadsPage({super.key});
@@ -10,58 +12,51 @@ class ThreadsPage extends StatefulWidget {
 }
 
 class _ThreadsPageState extends State<ThreadsPage> {
-  final List<ThreadPost> _posts = [
-    ThreadPost(
-      name: 'Sophia Bennett',
-      handle: '@sophiabennett',
-      content: 'I\'m excited to share my latest project with you all! It\'s been a labor of love, and I can\'t wait to hear your thoughts. Check it out and let me know what you think!',
-      timeAgo: '2d',
-      avatarUrl: '',
-      likes: 142,
-      comments: 23,
-      shares: 8,
-    ),
-    ThreadPost(
-      name: 'Ethan Carter',
-      handle: '@ethancarter',
-      content: 'Just finished reading a fascinating article on the future of AI. The possibilities are both exciting and a bit daunting. What are your thoughts on the rapid advancements in this field?',
-      timeAgo: '1d',
-      avatarUrl: '',
-      likes: 89,
-      comments: 45,
-      shares: 12,
-    ),
-    ThreadPost(
-      name: 'Olivia Davis',
-      handle: '@oliviadavis',
-      content: 'Spent the afternoon exploring a new hiking trail. The views were breathtaking, and the fresh air was so refreshing. Nature truly has a way of rejuvenating the soul.',
-      timeAgo: '3d',
-      avatarUrl: '',
-      likes: 67,
-      comments: 32,
-      shares: 5,
-    ),
-    ThreadPost(
-      name: 'Liam Foster',
-      handle: '@liamfoster',
-      content: 'I\'m thrilled to announce that I\'ll be speaking at the upcoming tech conference! It\'s an honor to share my insights and connect with fellow innovators. Stay tuned for more details!',
-      timeAgo: '2d',
-      avatarUrl: '',
-      likes: 203,
-      comments: 67,
-      shares: 15,
-    ),
-    ThreadPost(
-      name: 'Ava Green',
-      handle: '@avagreen',
-      content: 'Just watched a thought-provoking documentary about climate change. It\'s a stark reminder of the urgent need for collective action. Let\'s all do our part to protect our planet.',
-      timeAgo: '1d',
-      avatarUrl: '',
-      likes: 156,
-      comments: 78,
-      shares: 22,
-    ),
-  ];
+  List<ThreadPost> _posts = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
+
+  final List<String> _timeOptions = ['1h', '2h', '5h', '1d', '2d', '3d', '1w'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPosts();
+  }
+
+  Future<void> _loadPosts() async {
+    try {
+      final apiPosts = await ApiService.fetchPosts();
+      final apiUsers = await ApiService.fetchUsers();
+      final random = Random();
+      
+      setState(() {
+        _posts = apiPosts.take(20).map((post) {
+          final user = apiUsers.firstWhere(
+            (user) => user.id == post.userId,
+            orElse: () => apiUsers[random.nextInt(apiUsers.length)],
+          );
+          
+          return ThreadPost(
+            name: user.name,
+            handle: '@${user.username.toLowerCase()}',
+            content: '${post.title}\n\n${post.body}',
+            timeAgo: _timeOptions[random.nextInt(_timeOptions.length)],
+            avatarUrl: '',
+            likes: random.nextInt(200) + 10,
+            comments: random.nextInt(50) + 5,
+            shares: random.nextInt(20) + 1,
+          );
+        }).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load posts: $e';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,13 +81,61 @@ class _ThreadsPageState extends State<ThreadsPage> {
           ),
         ],
       ),
-      body: ListView.builder(
+      body: _buildBody(),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.black),
+            SizedBox(height: 16),
+            Text('Loading posts...', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    if (_errorMessage.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage,
+              style: const TextStyle(color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _isLoading = true;
+                  _errorMessage = '';
+                });
+                _loadPosts();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadPosts,
+      child: ListView.builder(
         itemCount: _posts.length,
         itemBuilder: (context, index) {
           return _buildPostItem(_posts[index]);
         },
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -172,34 +215,43 @@ class _ThreadsPageState extends State<ThreadsPage> {
   }
 
   Widget _buildAvatar(String name) {
-    Color avatarColor;
-    switch (name) {
-      case 'Sophia Bennett':
-        avatarColor = Colors.pink[200]!;
-        break;
-      case 'Ethan Carter':
-        avatarColor = Colors.blue[200]!;
-        break;
-      case 'Olivia Davis':
-        avatarColor = Colors.green[200]!;
-        break;
-      case 'Liam Foster':
-        avatarColor = Colors.orange[200]!;
-        break;
-      case 'Ava Green':
-        avatarColor = Colors.purple[200]!;
-        break;
-      default:
-        avatarColor = Colors.grey[300]!;
+    // Generate color based on name hash for consistency
+    final hash = name.hashCode;
+    final colors = [
+      Colors.pink[300]!,
+      Colors.blue[300]!,
+      Colors.green[300]!,
+      Colors.orange[300]!,
+      Colors.purple[300]!,
+      Colors.teal[300]!,
+      Colors.indigo[300]!,
+      Colors.red[300]!,
+      Colors.amber[300]!,
+      Colors.cyan[300]!,
+    ];
+    
+    final avatarColor = colors[hash.abs() % colors.length];
+    
+    // Get initials from name
+    final nameParts = name.split(' ');
+    String initials = '';
+    if (nameParts.isNotEmpty) {
+      initials = nameParts[0][0].toUpperCase();
+      if (nameParts.length > 1) {
+        initials += nameParts[1][0].toUpperCase();
+      }
     }
 
     return CircleAvatar(
       radius: 24,
       backgroundColor: avatarColor,
-      child: const Icon(
-        Icons.person,
-        color: Colors.white,
-        size: 28,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
       ),
     );
   }
